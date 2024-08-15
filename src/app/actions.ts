@@ -6,6 +6,72 @@ import { kv } from '@vercel/kv'
 
 import { auth } from '@/auth'
 import { type Chat } from '@/lib/types'
+import { db } from '@/db/drizzle'
+import { users } from '@/db/schema'
+import { eq } from 'drizzle-orm'
+import jwt from 'jsonwebtoken'
+
+export const getUserByID = async (id: number) => {
+  const [user] = await db.select().from(users).where(eq(users.id, id))
+  return user
+}
+
+export const getUserByEmail = async (email: string) => {
+  const [user] = await db.select().from(users).where(eq(users.email, email))
+  return user
+}
+
+export const createNewJWT = async (payload: JWTClaims) => {
+  const now = Date.now()
+  /* 15 minutes */
+  const exp = Math.floor(now / 1000) + 15 * 60
+
+  payload.exp = exp
+  const sign = jwt.sign(payload, process.env.JWT_SECRET!, {
+    algorithm: 'HS256'
+  })
+  return {
+    token: sign,
+    payload
+  }
+}
+
+type JWTErrorMessage = 'TOKEN_EXPIRED' | 'TOKEN_INVALID' | 'TOKEN_ERROR'
+
+export const verifyJWT = (token: string): JWTErrorMessage | null => {
+  let msg = null
+  jwt.verify(
+    token,
+    process.env.JWT_SECRET!,
+    {
+      algorithms: ['HS256']
+    },
+    (err, decoded) => {
+      if (err) {
+        if (err.name === 'TokenExpiredError') {
+          msg = 'TOKEN_EXPIRED'
+        }
+
+        if (err.name === 'JsonWebTokenError') {
+          msg = 'TOKEN_INVALID'
+        }
+
+        msg = 'TOKEN_ERROR'
+      }
+
+      if (!decoded) {
+        msg = 'TOKEN_INVALID'
+      }
+    }
+  )
+
+  return msg
+}
+
+export const parseJWT = (token: string) => {
+  const decoded = jwt.decode(token)
+  return decoded as JWTClaims
+}
 
 export async function getChats(userId?: string | null) {
   const session = await auth()
